@@ -1,10 +1,10 @@
-// Marketplace routes — Sprint 3
 const express = require("express");
 const router  = express.Router();
 
+// Marketplace routes — Sprint 3
 // Routes will be added in Sprint 3
-// GET    /api/marketplace
-// POST   /api/marketplace/upload
-// POST   /api/marketplace/buy/:id
+// POST /api/marketplace/upload
+// POST /api/marketplace/buy/:id
+// GET  /api/marketplace
 
 module.exports = router;

@@ -1,17 +1,17 @@
 require("dotenv").config();
 
-const express      = require("express");
-const cors         = require("cors");
-const helmet       = require("helmet");
-const morgan       = require("morgan");
-const passport     = require("./config/passport");
+const express    = require("express");
+const cors       = require("cors");
+const helmet     = require("helmet");
+const morgan     = require("morgan");
+const passport   = require("passport");
+require("./config/passport");
 
-const connectMongo          = require("./config/db.mongo");
-const { connectPostgres }   = require("./config/db.postgres");
-const errorHandler          = require("./middleware/error.middleware");
-const { apiLimiter }        = require("./middleware/rateLimit.middleware");
+const connectMongo        = require("./config/db.mongo");
+const { connectPostgres } = require("./config/db.postgres");
+const errorHandler        = require("./middleware/error.middleware");
+const { apiLimiter }      = require("./middleware/rateLimit.middleware");
 
-// Routes
 const authRoutes        = require("./routes/auth.routes");
 const cpRoutes          = require("./routes/cp.routes");
 const aiRoutes          = require("./routes/ai.routes");
@@ -20,18 +20,22 @@ const marketplaceRoutes = require("./routes/marketplace.routes");
 
 const app = express();
 
-// ─── Core Middleware ──────────────────────────────
-app.use(helmet());
-app.use(morgan(process.env.NODE_ENV === "development" ? "dev" : "combined"));
+// CORS — must be first, before helmet
 app.use(cors({
-  origin:  process.env.CLIENT_URL || "http://localhost:5173",
+  origin: "http://localhost:5173",
   credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
+app.options("*", cors({
+  origin: "http://localhost:5173",
+  credentials: true,
+}));
+
+app.use(helmet({ crossOriginResourcePolicy: false, crossOriginOpenerPolicy: false }));
+app.use(morgan("dev"));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
-app.use(passport.initialize());
 
 // ─── Rate Limiter ─────────────────────────────────
 app.use("/api", apiLimiter);
@@ -58,21 +62,33 @@ app.use((req, res) => {
   res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found.` });
 });
 
-// ─── Global Error Handler (must be last) ──────────
+// ─── Global Error Handler ─────────────────────────
 app.use(errorHandler);
 
 // ─── Start ────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
 
 const start = async () => {
-  await connectMongo();
-  await connectPostgres();
+  try {
+    console.log("Connecting to Mongo...");
+    await connectMongo();
+    console.log("✅ Connected to Mongo");
 
-  app.listen(PORT, () => {
-    console.log(`\n🚀 Orbit backend running on port ${PORT}`);
-    console.log(`📍 Environment : ${process.env.NODE_ENV}`);
-    console.log(`🔗 Health check: http://localhost:${PORT}/health\n`);
-  });
+    // Non-fatal — server starts even if Postgres is down
+    try {
+      await connectPostgres();
+    } catch (pgErr) {
+      console.warn("⚠️  PostgreSQL skipped:", pgErr.message);
+    }
+
+    app.listen(PORT, () => {
+      console.log(`\n🚀 Orbit backend running on port ${PORT}`);
+      console.log(`📍 Environment : ${process.env.NODE_ENV}`);
+      console.log(`🔗 Health check: http://localhost:${PORT}/health\n`);
+    });
+
+  } catch (err) {
+    console.error("❌ Failed to start server:", err.message);
+    process.exit(1);
+  }
 };
-
-start();
