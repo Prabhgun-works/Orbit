@@ -1,7 +1,7 @@
 const axios = require("axios");
 const CPCache = require("../models/mongo/CPCache.model");
 
-const LC_URL = "https://leetcode.com/graphql";
+const LC_URL      = "https://leetcode.com/graphql";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 // ─── GraphQL Queries ──────────────────────────────────
@@ -9,9 +9,7 @@ const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const STATS_QUERY = `
   query getUserProfile($username: String!) {
     matchedUser(username: $username) {
-      profile {
-        ranking
-      }
+      profile { ranking }
       submitStats {
         acSubmissionNum {
           difficulty
@@ -27,7 +25,7 @@ const TOPICS_QUERY = `
   query skillStats($username: String!) {
     matchedUser(username: $username) {
       tagProblemCounts {
-        advanced   { tagName problemsSolved }
+        advanced     { tagName problemsSolved }
         intermediate { tagName problemsSolved }
         fundamental  { tagName problemsSolved }
       }
@@ -55,15 +53,22 @@ const queryLeetCode = async (query, variables) => {
     { query, variables },
     {
       headers: {
-        "Content-Type": "application/json",
-        // Realistic User-Agent — LeetCode blocks default axios UA
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Referer: "https://leetcode.com",
+        "Content-Type":   "application/json",
+        "User-Agent":     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept":         "application/json",
+        "Accept-Language":"en-US,en;q=0.9",
+        "Origin":         "https://leetcode.com",
+        "Referer":        "https://leetcode.com/",
+        "x-csrftoken":    "abc123",
       },
-      timeout: 10000, // 10s timeout
+      timeout: 15000,
     }
   );
+
+  if (response.data.errors) {
+    throw new Error(response.data.errors[0].message);
+  }
+
   return response.data;
 };
 
@@ -73,14 +78,12 @@ const shapeData = (statsData, topicsData, calendarData) => {
   const user = statsData?.data?.matchedUser;
   if (!user) return null;
 
-  // Difficulty breakdown
   const submissionNums = user.submitStats?.acSubmissionNum || [];
   const easy   = submissionNums.find((d) => d.difficulty === "Easy")?.count   || 0;
   const medium = submissionNums.find((d) => d.difficulty === "Medium")?.count || 0;
   const hard   = submissionNums.find((d) => d.difficulty === "Hard")?.count   || 0;
   const total  = submissionNums.find((d) => d.difficulty === "All")?.count    || 0;
 
-  // Topics — merge all three tiers, sort by solved desc
   const topicUser = topicsData?.data?.matchedUser;
   const allTopics = [
     ...(topicUser?.tagProblemCounts?.fundamental   || []),
@@ -89,32 +92,21 @@ const shapeData = (statsData, topicsData, calendarData) => {
   ]
     .filter((t) => t.problemsSolved > 0)
     .sort((a, b) => b.problemsSolved - a.problemsSolved)
-    .slice(0, 15); // Top 15 topics only
+    .slice(0, 15);
 
-  // Calendar — submission heatmap
   const calUser = calendarData?.data?.matchedUser?.userCalendar;
   let calendarMap = {};
   if (calUser?.submissionCalendar) {
-    try {
-      calendarMap = JSON.parse(calUser.submissionCalendar);
-    } catch {
-      calendarMap = {};
-    }
+    try { calendarMap = JSON.parse(calUser.submissionCalendar); }
+    catch { calendarMap = {}; }
   }
 
   return {
-    ranking:       user.profile?.ranking || 0,
-    easy,
-    medium,
-    hard,
-    total,
-    streak:        calUser?.streak         || 0,
+    ranking:         user.profile?.ranking || 0,
+    easy, medium, hard, total,
+    streak:          calUser?.streak          || 0,
     totalActiveDays: calUser?.totalActiveDays || 0,
-    topics: allTopics.map((t) => ({
-      name:   t.tagName,
-      solved: t.problemsSolved,
-    })),
-    // Convert Unix timestamp keys to ISO date strings for frontend
+    topics: allTopics.map((t) => ({ name: t.tagName, solved: t.problemsSolved })),
     calendar: Object.entries(calendarMap).reduce((acc, [ts, count]) => {
       const date = new Date(parseInt(ts) * 1000).toISOString().split("T")[0];
       acc[date] = count;
@@ -128,20 +120,15 @@ const shapeData = (statsData, topicsData, calendarData) => {
 const fetchLeetCodeStats = async (username) => {
   const normalizedUsername = username.trim().toLowerCase();
 
-  // 1. Check cache first
-  const cached = await CPCache.findOne({
-    platform: "leetcode",
-    username: normalizedUsername,
-  });
-
-  const now = Date.now();
-  const cacheAge = cached ? now - new Date(cached.fetchedAt).getTime() : Infinity;
+  // 1. Check cache
+  const cached = await CPCache.findOne({ platform: "leetcode", username: normalizedUsername });
+  const cacheAge = cached ? Date.now() - new Date(cached.fetchedAt).getTime() : Infinity;
 
   if (cached && cacheAge < CACHE_TTL_MS) {
     return { ...cached.data, fromCache: true, cachedAt: cached.fetchedAt };
   }
 
-  // 2. Fetch fresh data — all three queries in parallel
+  // 2. Fetch from LeetCode
   let statsData, topicsData, calendarData;
 
   try {
@@ -151,19 +138,17 @@ const fetchLeetCodeStats = async (username) => {
       queryLeetCode(CALENDAR_QUERY, { username: normalizedUsername }),
     ]);
   } catch (fetchError) {
-    // LeetCode is down — serve stale cache if available
+    // Log real error for debugging
+    console.error("LeetCode fetch error:", fetchError.message, fetchError.response?.status);
+
+    // Serve stale cache if available
     if (cached) {
-      return {
-        ...cached.data,
-        fromCache: true,
-        stale: true,
-        cachedAt: cached.fetchedAt,
-      };
+      return { ...cached.data, fromCache: true, stale: true, cachedAt: cached.fetchedAt };
     }
-    throw new Error("LeetCode API is unreachable. Please try again later.");
+    throw new Error(`LeetCode API error: ${fetchError.message}`);
   }
 
-  // 3. Check if username actually exists
+  // 3. Check user exists
   const shaped = shapeData(statsData, topicsData, calendarData);
   if (!shaped) {
     throw new Error(`LeetCode user "${username}" not found.`);
@@ -172,12 +157,7 @@ const fetchLeetCodeStats = async (username) => {
   // 4. Upsert cache
   await CPCache.findOneAndUpdate(
     { platform: "leetcode", username: normalizedUsername },
-    {
-      platform:  "leetcode",
-      username:  normalizedUsername,
-      data:      shaped,
-      fetchedAt: new Date(),
-    },
+    { platform: "leetcode", username: normalizedUsername, data: shaped, fetchedAt: new Date() },
     { upsert: true, new: true }
   );
 

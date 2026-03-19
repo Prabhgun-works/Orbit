@@ -4,8 +4,6 @@ const express    = require("express");
 const cors       = require("cors");
 const helmet     = require("helmet");
 const morgan     = require("morgan");
-const passport   = require("passport");
-require("./config/passport");
 
 const connectMongo        = require("./config/db.mongo");
 const { connectPostgres } = require("./config/db.postgres");
@@ -20,15 +18,15 @@ const marketplaceRoutes = require("./routes/marketplace.routes");
 
 const app = express();
 
-// CORS — must be first, before helmet
+// ─── CORS first — always before helmet ───────────
 app.use(cors({
-  origin: "http://localhost:5173",
+  origin: process.env.CLIENT_URL || "http://localhost:5173",
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
 app.options("*", cors({
-  origin: "http://localhost:5173",
+  origin: process.env.CLIENT_URL || "http://localhost:5173",
   credentials: true,
 }));
 
@@ -66,29 +64,38 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // ─── Start ────────────────────────────────────────
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8000;
 
 const start = async () => {
   try {
-    console.log("Connecting to Mongo...");
     await connectMongo();
-    console.log("✅ Connected to Mongo");
 
-    // Non-fatal — server starts even if Postgres is down
     try {
       await connectPostgres();
     } catch (pgErr) {
-      console.warn("⚠️  PostgreSQL skipped:", pgErr.message);
+      console.warn("⚠️  PostgreSQL skipped (fix DATABASE_URL in .env):", pgErr.message);
     }
 
     app.listen(PORT, () => {
       console.log(`\n🚀 Orbit backend running on port ${PORT}`);
-      console.log(`📍 Environment : ${process.env.NODE_ENV}`);
-      console.log(`🔗 Health check: http://localhost:${PORT}/health\n`);
+      console.log(`🔗 Health: http://localhost:${PORT}/health\n`);
     });
 
   } catch (err) {
-    console.error("❌ Failed to start server:", err.message);
+    console.error("❌ Server failed to start:", err.message);
     process.exit(1);
   }
 };
+
+start();
+
+
+// Your current Atlas checklist
+
+//While you're in Atlas GUI, do these three things in order:
+
+//1. Whitelist IP** — Network Access → Add IP Address → Allow Access from Anywhere (`0.0.0.0/0`)
+
+//2. Fix your URI** — go to Clusters → Connect → Drivers → copy the connection string. Make sure your `.env` has `/orbit` in it:
+
+// MONGO_URI=mongodb+srv://user1:example123@orbit-cluster.pljmmqd.mongodb.net/orbit?retryWrites=true&w=majority

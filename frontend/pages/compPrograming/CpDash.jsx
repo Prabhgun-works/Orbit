@@ -28,7 +28,7 @@ const apiFetch = async (url) => {
 };
 
 const apiPost = async (url, body) => {
-  const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:5000/api"}${url}`, {
+  const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000/api"}${url}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

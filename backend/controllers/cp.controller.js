@@ -1,4 +1,4 @@
-const { fetchLeetCodeStats } = require("../services/leetcode.service");
+const { fetchLeetCodeStats } = require("../services/Leetcode.service");
 const asyncHandler = require("../utils/asyncHandler");
 const User = require("../models/mongo/User.model");
 

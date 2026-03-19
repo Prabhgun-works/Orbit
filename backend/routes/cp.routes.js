@@ -1,9 +1,18 @@
-// CP Tracker routes — Sprint 2
 const express = require("express");
 const router  = express.Router();
 
-// Routes will be added in Sprint 2
-// GET /api/cp/codeforces/:handle
-// GET /api/cp/leetcode/:username
+const {
+  getLeetCodeStats,
+  saveHandle,
+  getMyStats,
+} = require("../controllers/cp.controller");
+
+// TODO: uncomment before deploying — auth bypass for dev only
+// const { protect } = require("../middleware/auth.middleware");
+// router.use(protect);
+
+router.get("/leetcode/:username", getLeetCodeStats);
+router.get("/my-stats", getMyStats);
+router.post("/save-handle", saveHandle);
 
 module.exports = router;
