@@ -6,7 +6,7 @@ const COLORS = {
   easy:   "#1D9E75",
   medium: "#BA7517",
   hard:   "#A32D2D",
-  total:  "#534AB7",
+  total:  "#cdc9ffff",
 };
 
 const HEAT_COLORS = ["#E1F5EE","#9FE1CB","#5DCAA5","#1D9E75","#085041"];
