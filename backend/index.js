@@ -1,9 +1,11 @@
 require("dotenv").config();
 
-const express    = require("express");
-const cors       = require("cors");
-const helmet     = require("helmet");
-const morgan     = require("morgan");
+const express  = require("express");
+const cors     = require("cors");
+const helmet   = require("helmet");
+const morgan   = require("morgan");
+const passport = require("passport");
+require("./config/passport"); // registers Google strategy
 
 const connectMongo        = require("./config/db.mongo");
 const { connectPostgres } = require("./config/db.postgres");
@@ -18,15 +20,15 @@ const marketplaceRoutes = require("./routes/marketplace.routes");
 
 const app = express();
 
-// ─── CORS first — always before helmet ───────────
+// ─── CORS first — always before helmet ───────────────
 app.use(cors({
-  origin: process.env.CLIENT_URL || "http://localhost:5173",
+  origin:      process.env.CLIENT_URL || "http://localhost:5173",
   credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  methods:     ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
 app.options("*", cors({
-  origin: process.env.CLIENT_URL || "http://localhost:5173",
+  origin:      process.env.CLIENT_URL || "http://localhost:5173",
   credentials: true,
 }));
 
@@ -34,11 +36,12 @@ app.use(helmet({ crossOriginResourcePolicy: false, crossOriginOpenerPolicy: fals
 app.use(morgan("dev"));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+app.use(passport.initialize()); // no sessions — JWT handles persistence
 
-// ─── Rate Limiter ─────────────────────────────────
+// ─── Rate Limiter ─────────────────────────────────────
 app.use("/api", apiLimiter);
 
-// ─── Health Check ─────────────────────────────────
+// ─── Health Check ─────────────────────────────────────
 app.get("/health", (req, res) => {
   res.status(200).json({
     success:     true,
@@ -48,22 +51,22 @@ app.get("/health", (req, res) => {
   });
 });
 
-// ─── Routes ───────────────────────────────────────
+// ─── Routes ───────────────────────────────────────────
 app.use("/api/auth",        authRoutes);
 app.use("/api/cp",          cpRoutes);
 app.use("/api/ai",          aiRoutes);
 app.use("/api/scheduler",   schedulerRoutes);
 app.use("/api/marketplace", marketplaceRoutes);
 
-// ─── 404 ──────────────────────────────────────────
+// ─── 404 ──────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found.` });
 });
 
-// ─── Global Error Handler ─────────────────────────
+// ─── Global Error Handler ─────────────────────────────
 app.use(errorHandler);
 
-// ─── Start ────────────────────────────────────────
+// ─── Start ────────────────────────────────────────────
 const PORT = process.env.PORT || 8000;
 
 const start = async () => {
@@ -73,29 +76,18 @@ const start = async () => {
     try {
       await connectPostgres();
     } catch (pgErr) {
-      console.warn("⚠️  PostgreSQL skipped (fix DATABASE_URL in .env):", pgErr.message);
+      console.warn("⚠️  PostgreSQL skipped:", pgErr.message);
     }
 
     app.listen(PORT, () => {
-      console.log(`\n🚀 Orbit backend running on port ${PORT}`);
-      console.log(`🔗 Health: http://localhost:${PORT}/health\n`);
+      console.log(`\nOrbit backend running on port ${PORT}`);
+      console.log(`Health: http://localhost:${PORT}/health\n`);
     });
 
   } catch (err) {
-    console.error("❌ Server failed to start:", err.message);
+    console.error("Server failed to start:", err.message);
     process.exit(1);
   }
 };
 
 start();
-
-
-// Your current Atlas checklist
-
-//While you're in Atlas GUI, do these three things in order:
-
-//1. Whitelist IP** — Network Access → Add IP Address → Allow Access from Anywhere (`0.0.0.0/0`)
-
-//2. Fix your URI** — go to Clusters → Connect → Drivers → copy the connection string. Make sure your `.env` has `/orbit` in it:
-
-// MONGO_URI=mongodb+srv://user1:example123@orbit-cluster.pljmmqd.mongodb.net/orbit?retryWrites=true&w=majority
